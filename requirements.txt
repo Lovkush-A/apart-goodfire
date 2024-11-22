@@ -2,3 +2,4 @@ pandas>=2.0.0
 notebook>=7.0.0
 goodfire>=0.2.11
 matplotlib>=3.4.0
+python-dotenv
