@@ -3,3 +3,4 @@ notebook>=7.0.0
 goodfire>=0.2.11
 matplotlib>=3.4.0
 python-dotenv
+git+https://github.com/TransformerLensOrg/TransformerLens
