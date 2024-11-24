@@ -1,13 +1,34 @@
+from tqdm import tqdm
+from typing import List, Tuple, TypeAlias
+
+import torch
+
 from goodfire.variants import Variant
 from goodfire.api.client import Client
-import torch
-from transformers import AutoTokenizer
 from transformer_lens import HookedTransformer
-import numpy as np
-from typing import List, Tuple, TypeAlias
-from tqdm import tqdm
 
 def get_completion(client: Client, variant: Variant, prompt: str, max_tokens: int = 50) -> str:
+    """Get text completion from the Goodfire API.
+    
+    Code copied from Goodfire notebooks examples.
+
+    Parameters
+    ----------
+    client: Client
+        Goodfire API client
+    variant: Variant
+        Goodfire variants are models with hooks/modifications included for steering.
+    prompt: str
+        Text prompt to generate completion from.
+        This will be the user input to the assistant.
+    max_tokens: int
+        Maximum number of tokens to generate.
+
+    Returns
+    -------
+    str
+        Generated text completion.
+    """
     completion = ""
     for token in client.chat.completions.create(
         [
@@ -27,23 +48,52 @@ Messages: TypeAlias = list[dict[str, str]]
 def get_activations(
     model: HookedTransformer,
     messages: Messages,
-    layer: int = -1,
+    layer: int = 1,
     n_activations: int = 5,
 ) -> torch.Tensor:
-    """Get activations at a specific layer and position."""
+    """Get average activations at specified layer for the first n_activations assistants' tokens.
+    
+    WARNING:
+    - just read the code to understand what this function does. Should be easy to read.
+    - This is brittle and has various assumptions baked in. E.g. likely only works on specific
+      LLama 8b instruct model.
+
+    Parameters
+    ----------
+    model: HookedTransformer
+        Model to extract activations from.
+        Assume that the model is an Instruct model, whose tokenzier has `apply_chat_template` method.
+        Assumes specific tokenization IDs, which work for Llama 8b Instruct.
+    messages: Messages
+        List of chat messages to generate activations from.
+        Note that the code implicitly assume there is only one assistant message in the chat.
+    layer: int
+        Layer of model to extract activations from.
+    n_activations: int
+        Number of tokens whose activations to average.
+        E.g. value of 1 means you take the activations of the first assistant token.
+    
+    Returns
+    -------
+    torch.Tensor
+        Average activations at specified layer for the first n_activations assistants' tokens.
+    """
+    # tokenize
     tokens = model.tokenizer.apply_chat_template(
         messages,
         add_generation_prompt=True,
         return_tensors="pt"
     ).to("cuda")
 
-    # find first time assistant starts generating completions. assistant token is 78191
+    # find first time assistant starts generating completions. `assistant` token is 78191
     assistant_token_pos = torch.nonzero(tokens == 78191, as_tuple=True)[1][0].item()
 
-    # assert that the next three tokens are 128007, 271, 0
+    # assert that the next three tokens are 128007, 271
+    # 128007 is special token to indicate 'end of message type' and 271 are newlines.
     assert tokens[0, assistant_token_pos + 1] == 128007
     assert tokens[0, assistant_token_pos + 2] == 271
 
+    # Assistant's response starts after the newline token
     start_pos = assistant_token_pos + 3
     end_pos = start_pos + n_activations
 
@@ -60,19 +110,28 @@ def get_activations(
 def compute_steering_vector(
     model: HookedTransformer,
     pairs: List[Tuple[Messages, Messages]],
-    layer: int = -1,
+    layer: int = 1,
     n_activations: int = 5
 ) -> torch.Tensor:
     """
     Compute steering vector from contrastive pairs.
+
+    Most of the subtleties/logic are in the `get_activations` function.
+
+    Parameters
+    ----------
+    model: HookedTransformer
+        Model to extract activations from.
+    pairs: List[Tuple[Messages, Messages]]
+        List of contrastive pairs of messages to compute steering vector from.
+    layer: int
+        Layer of model to extract activations from
+    n_activations: int
+        number of tokens whose activations to average.
     
-    Args:
-        model: HookedTransformer model
-        pairs: List of (x, y) sentence pairs
-        layer: Layer to extract activations from (-1 for final layer)
-        n_activations: number of tokens whose activations to average.
-    
-    Returns:
+    Returns
+    -------
+    torch.Tensor
         Steering vector as torch tensor
     """
     # Get activations for each sentence in pairs
@@ -96,9 +155,6 @@ def compute_steering_vector(
     # Average difference vectors to get steering vector
     steering_vector = diff_vectors.mean(dim=0)
     
-    # # Normalize steering vector
-    # steering_vector = steering_vector / torch.norm(steering_vector)
-    
     return steering_vector
 
 def apply_steering(
@@ -112,16 +168,18 @@ def apply_steering(
     """
     Apply steering vector to generate text from a prefix.
     
-    Args:
-        model: HookedTransformer model
-        prefix: Input text prefix to start generation
-        steering_vector: Computed steering vector
-        n_tokens: Number of tokens to generate
-        layer: Layer to apply steering at
-        strength: Scaling factor for steering vector
+    Parameters
+    ----------
+    model: HookedTransformer model
+    prefix: Input text prefix to start generation
+    steering_vector: Computed steering vector
+    n_tokens: Number of tokens to generate
+    layer: Layer to apply steering at
+    strength: Scaling factor for steering vector
     
-    Returns:
-        Generated text after applying steering
+    Returns
+    -------
+    Generated text after applying steering
     """
     tokens = model.tokenizer.apply_chat_template(
         messages,
