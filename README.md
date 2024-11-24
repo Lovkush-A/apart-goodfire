@@ -25,11 +25,12 @@ Concrete example:
 I encountered various technical challenges along the way, so I did not experiment as much as I would have liked. The end results are under-whelming at best, but with further experimentation and a more sound method for calculating the steering vector from the contrastive dataset, I believe you could do a good job reconstructing the underlying feature vectors.
 
 ## Repository Structure
-- `notebooks`
+- `src`
   - `01-test-goodfire`, `02-test-transformerlens-steering`, `03-test-llmama8b` and `04-test-transformerlens-llama8b` are notebooks I used to learn how to use the Goodfire API and TransformerLens. They can be safely skipped by most readers.
   - `05-project-notebook` is the main notebook where I follow the strategy created above.
   - `data01.json` and `data02.json` are the contrastive datasets I created using the Goodfire API.
     - `data01.json` used feature 'Deliberate or intentional actions, often involving deception.' with nudging coefficients 0.8 and -0.3
     - `data02.json` used feature 'Betrayal and treachery.' with nudging coefficients 0.6 and -0.3
+  - `generations.txt` contains the generations I got from the reconstruction steering vector.
   - `utils.py` contains helper functions used in the notebooks.
 - `.gitignore`, `LICENSE`, `README.md` and `requirements.txt` are standard files for a GitHub repository.
