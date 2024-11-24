@@ -47,7 +47,7 @@ def get_activations(
     start_pos = assistant_token_pos + 3
     end_pos = start_pos + n_activations
 
-    _, cache = model.run_with_cache(tokens[0:end_pos])
+    _, cache = model.run_with_cache(tokens[:, 0:end_pos])
 
     # Get residual stream activations at specified layer
     activations = cache["resid_post", layer][0]
@@ -96,8 +96,8 @@ def compute_steering_vector(
     # Average difference vectors to get steering vector
     steering_vector = diff_vectors.mean(dim=0)
     
-    # Normalize steering vector
-    steering_vector = steering_vector / torch.norm(steering_vector)
+    # # Normalize steering vector
+    # steering_vector = steering_vector / torch.norm(steering_vector)
     
     return steering_vector
 
